@@ -210,8 +210,9 @@ const HTML = fs.readFileSync(path.join(ROOT, 'family-learning-workbench-v2.html'
   await page.locator('#phonicsApp .grid [data-enter-course="C02"]').click();
   await page.waitForTimeout(300);
   check('phonics-detail-view', await page.evaluate(() => document.getElementById('detail').classList.contains('active') && !document.getElementById('phonicsApp').hidden));
-  const selectedCount = await page.locator('#phonicsApp #items input:checked').count();
-  check('phonics-c02-default-36', selectedCount === 36);
+  const selectedCount = await page.locator('#phonicsApp #items .word-item').count();
+  check('phonics-c02-all-40', selectedCount === 40);
+  check('phonics-no-manual-picking', await page.evaluate(() => !document.querySelector('#phonicsApp #items input[type="checkbox"]') && !document.getElementById('selectVisible') && !document.getElementById('selectCourse') && !document.getElementById('search') && !document.getElementById('lessonFilter') && !document.getElementById('sort')));
   check('phonics-hash', /ph\/course-detail\/C02/.test(await page.evaluate(() => location.hash)));
   // back to workbench nav
   await page.evaluate(() => window.__WB.route('today'));

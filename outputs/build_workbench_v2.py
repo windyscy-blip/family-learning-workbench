@@ -86,7 +86,78 @@ scoped_css = scope_css(phonics_css)
 
 # ---------- transform phonics js ----------
 js = phonics_js
-# Guard dynamic controls that are created only after opening import/detail panels.
+# ---------- simplify phonics material selection: random draw only, no manual picking ----------
+# List: plain cards, no checkboxes.
+js = js.replace(
+    "document.getElementById('items').innerHTML=arr.map(m=>`<label class=\"word-item\"><input type=\"checkbox\" data-material=\"${m.id}\" ${context.selected.includes(m.id)?'checked':''}><span><b>${esc(m.word)}</b><br><span class=\"tag\">${esc(m.meaning)} · ${esc(m.primaryLessonId)}${m.reviewed?'':' · 家长增词，未审校'}</span></span><span class=\"word-symbol\" aria-hidden=\"true\">${esc(m.emoji)}</span></label>`).join('');",
+    "document.getElementById('items').innerHTML=arr.map(m=>`<div class=\"word-item\"><span><b>${esc(m.word)}</b><br><span class=\"tag\">${esc(m.meaning)} · ${esc(m.primaryLessonId)}${m.reviewed?'':' · 家长增词，未审校'}</span></span><span class=\"word-symbol\" aria-hidden=\"true\">${esc(m.emoji)}</span></div>`).join('');",
+)
+# Status texts: pool size instead of selected count.
+js = js.replace(
+    "document.getElementById('selectionM').textContent=`已选 ${context.selected.length} 个材料`;",
+    "document.getElementById('selectionM').textContent=`本课 ${materials.filter(m=>m.course===c[0]).length} 个材料 · 随机抽取`;",
+)
+js = js.replace(
+    "document.getElementById('counts').textContent=`当前显示 ${arr.length} 项 / 本课 ${materials.filter(m=>m.course===c[0]).length} 项`;",
+    "",
+)
+js = js.replace(
+    "document.getElementById('prepareCount').textContent=`本轮 ${context.quantity} 题 · 已选 ${context.selected.length} 个材料`;",
+    "document.getElementById('prepareCount').textContent=`本轮 ${context.quantity} 题 · 从本课 ${materials.filter(m=>m.course===c[0]).length} 个材料随机抽取`;",
+)
+js = js.replace(
+    "document.getElementById('trainStart').disabled=!context.selected.length||!context.quantity||context.quantity>context.selected.length;document.getElementById('flashStart').disabled=!context.selected.length;",
+    "document.getElementById('trainStart').disabled=!context.selected.length||!context.quantity||context.quantity>context.selected.length;",
+)
+# Drop checkbox change handlers and saved-group UI (manual selection is gone).
+js = js.replace(
+    "document.querySelectorAll('[data-material]').forEach(box=>box.onchange=()=>{context.selected=box.checked?[...new Set([...context.selected,box.dataset.material])]:context.selected.filter(id=>id!==box.dataset.material);if(context.quantity>context.selected.length)context.quantity=context.selected.length;persistConfig();renderDetail()});document.querySelectorAll('[data-group-load]').forEach(b=>b.onclick=()=>loadGroup(+b.dataset.groupLoad));document.querySelectorAll('[data-group-rename]').forEach(b=>b.onclick=()=>renameGroup(+b.dataset.groupRename));document.querySelectorAll('[data-group-delete]').forEach(b=>b.onclick=()=>deleteGroup(+b.dataset.groupDelete));",
+    "",
+)
+js = js.replace(
+    "document.getElementById('groups').innerHTML=state.savedGroups.filter(g=>g.courseId===c[0]).map((g,i)=>`<span>${esc(g.name)} (${g.itemIds.length}) <button data-group-load=\"${i}\">加载</button><button data-group-rename=\"${i}\">改名</button><button data-group-delete=\"${i}\">删除</button></span>`).join('')+'<button id=\"saveGroup\">保存当前选择为常用组</button>';document.getElementById('saveGroup').onclick=saveGroup;",
+    "document.getElementById('groups').innerHTML='';",
+)
+# Drop bindings of removed controls.
+js = js.replace(
+    "document.getElementById('selectVisible').onclick=()=>{context.selected=[...new Set([...context.selected,...filtered().map(m=>m.id)])];context.quantity=Math.min(Math.max(context.quantity,1),context.selected.length);persistConfig();renderDetail()};document.getElementById('selectCourse').onclick=()=>{context.selected=materials.filter(m=>m.course===context.courseId).map(m=>m.id);context.quantity=Math.min(8,context.selected.length);persistConfig();renderDetail()};document.getElementById('clearCourse').onclick=()=>{context.selected=[];context.quantity=0;persistConfig();renderDetail()};document.getElementById('search').oninput=e=>{context.search=e.target.value;renderDetail()};document.getElementById('lessonFilter').onchange=e=>{context.lesson=e.target.value;renderDetail()};document.getElementById('sort').onchange=e=>{context.sort=e.target.value;context.randomIds=[];renderDetail()};document.getElementById('reshuffle').onclick=()=>{context.randomIds=shuffle(filtered().map(m=>m.id));persistConfig();renderDetail()};",
+    "",
+)
+js = js.replace(
+    "document.getElementById('randomTrain').onchange=e=>{context.randomTrain=e.target.checked;persistConfig()};",
+    "",
+)
+# renderDetail: stop touching removed elements.
+js = js.replace(
+    "document.getElementById('lessonFilter').innerHTML='<option value=\"all\">全部小课与标签</option>'+lessons.map(x=>`<option value=\"${esc(x)}\">${esc(x)}</option>`).join('');document.getElementById('lessonFilter').value=context.lesson;document.getElementById('search').value=context.search;document.getElementById('sort').value=context.sort;document.getElementById('quantity').value=context.quantity;document.getElementById('randomTrain').checked=context.randomTrain;",
+    "document.getElementById('quantity').value=context.quantity;",
+)
+# enterCourse: default to the whole course pool, always random draw.
+js = js.replace(
+    "const courseItems=materials.filter(m=>m.course===id),defaults=id==='C02'?courseItems.filter(m=>m.tags.includes('基础')):courseItems;context={courseId:id,selected:defaults.map(m=>m.id),lesson:'all',search:'',sort:'order',randomIds:[],scrollY:0,quantity:Math.min(8,defaults.length),randomTrain:false};document.getElementById('search').value='';document.getElementById('sort').value='order';document.getElementById('quantity').value=context.quantity;persistConfig()}",
+    "const courseItems=materials.filter(m=>m.course===id);context={courseId:id,selected:courseItems.map(m=>m.id),lesson:'all',search:'',sort:'order',randomIds:[],scrollY:0,quantity:Math.min(8,courseItems.length),randomTrain:true};document.getElementById('quantity').value=context.quantity;persistConfig()}",
+)
+# Start button draws a random subset from the course pool.
+js = js.replace(
+    "document.getElementById('flashStart').onclick=()=>beginFlash(context.selected);document.getElementById('trainStart').onclick=()=>startSession(false);",
+    "document.getElementById('trainStart').onclick=()=>{const pool=context.selected.map(byId).filter(Boolean);if(!pool.length)return notice('本课暂无材料。',true);const n=Math.max(1,Math.min(context.quantity||8,pool.length));startSession(false,shuffle(pool).slice(0,n).map(m=>m.id))};",
+)
+# flash page: "用这组训练" draws randomly from the flash list.
+js = js.replace(
+    "document.getElementById('flashToTrain').onclick=()=>{context.selected=flash.list.map(x=>x.id);context.quantity=Math.min(context.quantity||8,flash.list.length);startSession(false)}",
+    "document.getElementById('flashToTrain').onclick=()=>{const pool=flash.list.slice();const n=Math.max(1,Math.min(context.quantity||8,pool.length));startSession(false,shuffle(pool).slice(0,n).map(m=>m.id))}",
+)
+# startSession: accept explicit ids as the draw pool (retry path unchanged).
+js = js.replace(
+    "let pool;if(retry)pool=ids.map(id=>lastResult?.itemSnapshot?.find(m=>m.id===id)).filter(Boolean);else pool=context.selected.map(byId).filter(Boolean);if(!pool.length)return notice('请选择训练材料。');let n=retry?pool.length:context.quantity;",
+    "let pool;if(retry)pool=ids.map(id=>lastResult?.itemSnapshot?.find(m=>m.id===id)).filter(Boolean);else if(ids&&ids.length)pool=ids.map(byId).filter(Boolean);else pool=context.selected.map(byId).filter(Boolean);if(!pool.length)return notice('请选择训练材料。');let n=retry?pool.length:Math.min(context.quantity||pool.length,pool.length);",
+)
+# quantity change: clamp against pool size (selected == whole course now).
+js = js.replace(
+    "document.getElementById('quantity').onchange=e=>{let n=Number(e.target.value);context.quantity=context.selected.length?Math.max(1,Math.min(context.selected.length,n||1)):0;persistConfig();renderDetail()};",
+    "document.getElementById('quantity').onchange=e=>{let n=Number(e.target.value);const pool=materials.filter(m=>m.course===context.courseId).length;context.quantity=pool?Math.max(1,Math.min(pool,n||1)):0;persistConfig();renderDetail()};",
+)
+# Guard dynamic controls
 js = js.replace("document.getElementById('commitImport').onclick=()=>{", "var commitImportEl=document.getElementById('commitImport');if(commitImportEl)commitImportEl.onclick=()=>{")
 js = js.replace("document.getElementById('saveGroup').onclick=saveGroup;", "var saveGroupEl=document.getElementById('saveGroup');if(saveGroupEl)saveGroupEl.onclick=saveGroup;")
 # homeGroups container lives in the removed home section; its load-group handling moves to delegated document clicks.
@@ -113,11 +184,6 @@ reps = [
     # Load-group handling via global delegation (home container removed).
     ("document.addEventListener('click',e=>{const b=e.target.closest('[data-go]');if(!b)return;",
      "document.addEventListener('click',e=>{const lg=e.target.closest('[data-load-group]');if(lg){const g=state.savedGroups[+lg.dataset.loadGroup];if(g){const valid=prepareGroupLoad(g);if(!valid)return;enterCourse(g.courseId);context.selected=valid;context.quantity=Math.min(Math.max(1,context.quantity||8),valid.length);persistConfig();route('detail')}}return;const b0=e.target.closest('[data-go]');if(!b0)return;const b=b0;if(!b)return;"),
-    # --- flash cards are a mode of training, not a separate entry ---
-    ("document.getElementById('flashStart').disabled=!context.selected.length", ""),
-    ("document.getElementById('flashStart').onclick=()=>beginFlash(context.selected)", ""),
-    ("document.getElementById('trainStart').onclick=()=>startSession(false)",
-     "document.getElementById('trainStart').onclick=()=>{const pm=document.getElementById('practiceMode');if(pm&&pm.value==='flash')beginFlash(context.selected);else startSession(false)}"),
     # renderTrain: tolerate sessions whose current item is missing (e.g. resumed legacy test data).
     ("const m=currentItem(),d=draft(),a=session.attempts[m.id];",
      "const m=currentItem(),d=draft();if(!m){notice('本题材料缺失，请重新选材。',true);return}const a=session.attempts[m.id];"),
@@ -187,8 +253,14 @@ phonics_body = phonics_body.replace('<section id="data" class="view"><h1>本机�
 # Insert last-session strip at the top of the courses page, below its header row.
 _last_area = '<div id="lastSessionStrip" class="last-session-strip" hidden></div>'
 phonics_body = phonics_body.replace('<section id="courses" class="view">', '<section id="courses" class="view">' + _last_area, 1)
-# Flash cards are a practice mode; keep one clear primary start entry.
-phonics_body = phonics_body.replace('<input id="quantity" type="number" min="1" value="8">', '<input id="quantity" type="number" min="1" value="8"><label class="inline">练习形式 <select id="practiceMode"><option value="train">拼读训练</option><option value="flash">闪卡练习</option></select></label>', 1)
+# ---------- simplify phonics material selection: random draw only, no manual picking ----------
+# Toolbar: drop search / lesson filter / sort / reshuffle / bulk-select buttons.
+phonics_body = phonics_body.replace(
+    '<div class="toolbar"><div class="row"><input id="search" type="text" placeholder="搜索词语" aria-label="搜索词语"><select id="lessonFilter" aria-label="小课筛选"></select><select id="sort" aria-label="材料排序"><option value="order">课程顺序</option><option value="random">随机顺序</option></select><button id="reshuffle">重新随机</button></div><div class="row"><button id="selectVisible">全选当前可见</button><button id="selectCourse">全选本课</button><button id="clearCourse">清空本课选择</button><span id="counts" class="muted"></span></div><div class="row"><label class="inline">本轮练习 <input id="quantity" type="number" min="1" value="8"></label><span id="selectionM" class="muted"></span><label class="inline"><input type="checkbox" id="randomTrain">训练随机</label><button id="addWord">家长增词</button></div><div id="groups" class="row"></div></div>',
+    '<div class="toolbar"><div class="row"><label class="inline">本轮练习 <input id="quantity" type="number" min="1" value="8"> 题</label><span id="selectionM" class="muted"></span><button id="addWord">家长增词</button></div><div id="groups" class="row"></div></div>',
+    1,
+)
+# Bottom bar: single start entry (flash entry removed; random draw covers practice).
 phonics_body = phonics_body.replace('<div class="bar-actions"><button id="flashStart">开始闪卡</button><button class="primary" id="trainStart">开始训练</button></div>', '<div class="bar-actions"><button class="primary" id="trainStart">开始练习</button></div>', 1)
 phonics_body = phonics_body.replace('<main class="app">', '<div id="phonicsApp" hidden><main class="app">', 1)
 assert phonics_body.rstrip().endswith("</main>")
