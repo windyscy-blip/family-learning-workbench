@@ -90,12 +90,12 @@ js = phonics_js
 # List: plain cards, no checkboxes.
 js = js.replace(
     "document.getElementById('items').innerHTML=arr.map(m=>`<label class=\"word-item\"><input type=\"checkbox\" data-material=\"${m.id}\" ${context.selected.includes(m.id)?'checked':''}><span><b>${esc(m.word)}</b><br><span class=\"tag\">${esc(m.meaning)} · ${esc(m.primaryLessonId)}${m.reviewed?'':' · 家长增词，未审校'}</span></span><span class=\"word-symbol\" aria-hidden=\"true\">${esc(m.emoji)}</span></label>`).join('');",
-    "document.getElementById('items').innerHTML=arr.map(m=>`<div class=\"word-item\"><span><b>${esc(m.word)}</b><br><span class=\"tag\">${esc(m.meaning)} · ${esc(m.primaryLessonId)}${m.reviewed?'':' · 家长增词，未审校'}</span></span><span class=\"word-symbol\" aria-hidden=\"true\">${esc(m.emoji)}</span></div>`).join('');",
+    "document.getElementById('items').innerHTML=arr.map(m=>`<div class=\"word-item${(context.mode||'train')==='train'&&context.selected.length<materials.filter(x=>x.course===context.courseId).length&&context.selected.includes(m.id)?' picked':''}\"><span><b>${esc(m.word)}</b><br><span class=\"tag\">${esc(m.meaning)} · ${esc(m.primaryLessonId)}${m.reviewed?'':' · 家长增词，未审校'}</span></span><span class=\"word-symbol\" aria-hidden=\"true\">${esc(m.emoji)}</span></div>`).join('');",
 )
-# Status texts: pool size instead of selected count.
+# Status texts: mode-aware (train = ordered learning of picked groups, flash = random review).
 js = js.replace(
     "document.getElementById('selectionM').textContent=`已选 ${context.selected.length} 个材料`;",
-    "document.getElementById('selectionM').textContent=`本课 ${materials.filter(m=>m.course===c[0]).length} 个材料 · 随机抽取`;",
+    "const _pool=materials.filter(m=>m.course===c[0]);const _same=(a,b)=>a.length===b.length&&b.every(id=>a.includes(id));const _gName=[...new Set(_pool.map(m=>m.primaryLessonId))].find(g=>_same(context.selected,_pool.filter(m=>m.primaryLessonId===g).map(m=>m.id)));const _lbl=_gName?('“'+_gName+'”'):(_same(context.selected,_pool.map(m=>m.id))?'全部材料':(context.selected.length?'自定义选择':'未选择'));document.getElementById('selectionM').textContent=(context.mode||'train')==='train'?`拼读训练 · 按顺序学习${_lbl} ${context.selected.length} 个材料`:`闪卡复习 · 从本课 ${_pool.length} 个材料随机抽取`;",
 )
 js = js.replace(
     "document.getElementById('counts').textContent=`当前显示 ${arr.length} 项 / 本课 ${materials.filter(m=>m.course===c[0]).length} 项`;",
@@ -103,7 +103,7 @@ js = js.replace(
 )
 js = js.replace(
     "document.getElementById('prepareCount').textContent=`本轮 ${context.quantity} 题 · 已选 ${context.selected.length} 个材料`;",
-    "document.getElementById('prepareCount').textContent=`本轮 ${context.quantity} 题 · 从本课 ${materials.filter(m=>m.course===c[0]).length} 个材料随机抽取`;",
+    "document.getElementById('prepareCount').textContent=(context.mode||'train')==='train'?`本轮 ${context.quantity} 题 · 按顺序学习已选材料`:`本轮 ${context.quantity} 题 · 从本课 ${materials.filter(m=>m.course===c[0]).length} 个材料随机复习`;",
 )
 js = js.replace(
     "document.getElementById('trainStart').disabled=!context.selected.length||!context.quantity||context.quantity>context.selected.length;document.getElementById('flashStart').disabled=!context.selected.length;",
@@ -116,7 +116,7 @@ js = js.replace(
 )
 js = js.replace(
     "document.getElementById('groups').innerHTML=state.savedGroups.filter(g=>g.courseId===c[0]).map((g,i)=>`<span>${esc(g.name)} (${g.itemIds.length}) <button data-group-load=\"${i}\">加载</button><button data-group-rename=\"${i}\">改名</button><button data-group-delete=\"${i}\">删除</button></span>`).join('')+'<button id=\"saveGroup\">保存当前选择为常用组</button>';document.getElementById('saveGroup').onclick=saveGroup;",
-    "document.getElementById('groups').innerHTML='';",
+    "document.getElementById('groups').innerHTML=(context.mode||'train')==='train'?[...new Set(materials.filter(m=>m.course===c[0]).map(m=>m.primaryLessonId))].map(g=>`<button type=\"button\" class=\"${context.pickTag===g?'pick-active':''}\" data-pick-group=\"${esc(g)}\">选${esc(g)}</button>`).join('')+`<button type=\"button\" class=\"${context.pickTag==='__all'?'pick-active':''}\" data-pick-group=\"__all\">选全部</button><button type=\"button\" class=\"${context.pickTag==='__none'?'pick-active':''}\" data-pick-group=\"__none\">清空重选</button>`:'';document.querySelectorAll('[data-pick-group]').forEach(b=>b.onclick=()=>{const g=b.dataset.pickGroup;const pool=materials.filter(m=>m.course===context.courseId);context.selected=g==='__all'?pool.map(m=>m.id):(g==='__none'?[]:pool.filter(m=>m.primaryLessonId===g).map(m=>m.id));context.pickTag=g;context.quantity=Math.max(1,Math.min(context.quantity||8,context.selected.length||1));persistConfig();renderDetail();notice(g==='__none'?'已清空选择，请重新选择分组。':(g==='__all'?'已选择本课全部材料。':`已选择「${g}」，共 ${context.selected.length} 个材料，按顺序学习。`))});",
 )
 # Drop bindings of removed controls.
 js = js.replace(
@@ -135,17 +135,17 @@ js = js.replace(
 # enterCourse: default to the whole course pool, always random draw.
 js = js.replace(
     "const courseItems=materials.filter(m=>m.course===id),defaults=id==='C02'?courseItems.filter(m=>m.tags.includes('基础')):courseItems;context={courseId:id,selected:defaults.map(m=>m.id),lesson:'all',search:'',sort:'order',randomIds:[],scrollY:0,quantity:Math.min(8,defaults.length),randomTrain:false};document.getElementById('search').value='';document.getElementById('sort').value='order';document.getElementById('quantity').value=context.quantity;persistConfig()}",
-    "const courseItems=materials.filter(m=>m.course===id);context={courseId:id,selected:courseItems.map(m=>m.id),lesson:'all',search:'',sort:'order',randomIds:[],scrollY:0,quantity:Math.min(8,courseItems.length),randomTrain:true};document.getElementById('quantity').value=context.quantity;persistConfig()}",
+    "const courseItems=materials.filter(m=>m.course===id);context={courseId:id,selected:courseItems.map(m=>m.id),lesson:'all',search:'',sort:'order',randomIds:[],scrollY:0,quantity:Math.min(8,courseItems.length),randomTrain:true,pickTag:'__all'};document.getElementById('quantity').value=context.quantity;persistConfig()}",
 )
-# Start button draws a random subset from the course pool.
+# Start button honors practice mode and draws a random subset from the course pool.
 js = js.replace(
     "document.getElementById('flashStart').onclick=()=>beginFlash(context.selected);document.getElementById('trainStart').onclick=()=>startSession(false);",
-    "document.getElementById('trainStart').onclick=()=>{const pool=context.selected.map(byId).filter(Boolean);if(!pool.length)return notice('本课暂无材料。',true);const n=Math.max(1,Math.min(context.quantity||8,pool.length));startSession(false,shuffle(pool).slice(0,n).map(m=>m.id))};",
+    "document.getElementById('trainStart').onclick=()=>{const pm=document.getElementById('practiceMode');const isFlash=pm&&pm.value==='flash';if(isFlash){const pool=materials.filter(m=>m.course===context.courseId);if(!pool.length)return notice('本课暂无材料。',true);beginFlash(shuffle(pool).slice(0,Math.max(1,Math.min(context.quantity||8,pool.length))).map(m=>m.id));return}const pool=context.selected.map(byId).filter(Boolean);if(!pool.length)return notice('请先选择要学习的分组材料。',true);const n=Math.max(1,Math.min(context.quantity||8,pool.length));context.randomTrain=false;startSession(false,pool.slice(0,n).map(m=>m.id))};",
 )
 # flash page: "用这组训练" draws randomly from the flash list.
 js = js.replace(
     "document.getElementById('flashToTrain').onclick=()=>{context.selected=flash.list.map(x=>x.id);context.quantity=Math.min(context.quantity||8,flash.list.length);startSession(false)}",
-    "document.getElementById('flashToTrain').onclick=()=>{const pool=flash.list.slice();const n=Math.max(1,Math.min(context.quantity||8,pool.length));startSession(false,shuffle(pool).slice(0,n).map(m=>m.id))}",
+    "document.getElementById('flashToTrain').onclick=()=>{const pool=flash.list.slice();const n=Math.max(1,Math.min(context.quantity||8,pool.length));context.randomTrain=false;startSession(false,pool.slice(0,n).map(m=>m.id))}",
 )
 # startSession: accept explicit ids as the draw pool (retry path unchanged).
 js = js.replace(
@@ -155,7 +155,12 @@ js = js.replace(
 # quantity change: clamp against pool size (selected == whole course now).
 js = js.replace(
     "document.getElementById('quantity').onchange=e=>{let n=Number(e.target.value);context.quantity=context.selected.length?Math.max(1,Math.min(context.selected.length,n||1)):0;persistConfig();renderDetail()};",
-    "document.getElementById('quantity').onchange=e=>{let n=Number(e.target.value);const pool=materials.filter(m=>m.course===context.courseId).length;context.quantity=pool?Math.max(1,Math.min(pool,n||1)):0;persistConfig();renderDetail()};",
+    "document.getElementById('quantity').onchange=e=>{let n=Number(e.target.value);const cap=(context.mode||'train')==='train'?context.selected.length:materials.filter(m=>m.course===context.courseId).length;context.quantity=cap?Math.max(1,Math.min(cap,n||1)):0;persistConfig();renderDetail()};document.getElementById('practiceMode').onchange=e=>{context.mode=e.target.value==='flash'?'flash':'train';if(context.mode==='train'&&!context.selected.length){context.selected=materials.filter(m=>m.course===context.courseId).map(m=>m.id);context.pickTag='__all'}persistConfig();renderDetail()};",
+)
+# keep order for training draws and retries; shuffle only for flash review
+js = js.replace(
+    "const ordered=context.randomTrain?shuffle(pool):pool;",
+    "const ordered=retry?pool:(context.randomTrain?shuffle(pool):pool);",
 )
 # Guard dynamic controls
 js = js.replace("document.getElementById('commitImport').onclick=()=>{", "var commitImportEl=document.getElementById('commitImport');if(commitImportEl)commitImportEl.onclick=()=>{")
@@ -183,7 +188,7 @@ reps = [
     ("if(active){session=active;document.getElementById('resume').disabled=false}if(active)active.status='paused';", "if(active)active.status='paused';"),
     # Load-group handling via global delegation (home container removed).
     ("document.addEventListener('click',e=>{const b=e.target.closest('[data-go]');if(!b)return;",
-     "document.addEventListener('click',e=>{const lg=e.target.closest('[data-load-group]');if(lg){const g=state.savedGroups[+lg.dataset.loadGroup];if(g){const valid=prepareGroupLoad(g);if(!valid)return;enterCourse(g.courseId);context.selected=valid;context.quantity=Math.min(Math.max(1,context.quantity||8),valid.length);persistConfig();route('detail')}}return;const b0=e.target.closest('[data-go]');if(!b0)return;const b=b0;if(!b)return;"),
+     "document.addEventListener('click',e=>{const lg=e.target.closest('[data-load-group]');if(lg){const g=state.savedGroups[+lg.dataset.loadGroup];if(g){const valid=prepareGroupLoad(g);if(!valid)return;enterCourse(g.courseId);context.selected=valid;context.quantity=Math.min(Math.max(1,context.quantity||8),valid.length);persistConfig();route('detail')}return}const b0=e.target.closest('[data-go]');if(!b0)return;const b=b0;if(!b)return;"),
     # renderTrain: tolerate sessions whose current item is missing (e.g. resumed legacy test data).
     ("const m=currentItem(),d=draft(),a=session.attempts[m.id];",
      "const m=currentItem(),d=draft();if(!m){notice('本题材料缺失，请重新选材。',true);return}const a=session.attempts[m.id];"),
@@ -257,7 +262,7 @@ phonics_body = phonics_body.replace('<section id="courses" class="view">', '<sec
 # Toolbar: drop search / lesson filter / sort / reshuffle / bulk-select buttons.
 phonics_body = phonics_body.replace(
     '<div class="toolbar"><div class="row"><input id="search" type="text" placeholder="搜索词语" aria-label="搜索词语"><select id="lessonFilter" aria-label="小课筛选"></select><select id="sort" aria-label="材料排序"><option value="order">课程顺序</option><option value="random">随机顺序</option></select><button id="reshuffle">重新随机</button></div><div class="row"><button id="selectVisible">全选当前可见</button><button id="selectCourse">全选本课</button><button id="clearCourse">清空本课选择</button><span id="counts" class="muted"></span></div><div class="row"><label class="inline">本轮练习 <input id="quantity" type="number" min="1" value="8"></label><span id="selectionM" class="muted"></span><label class="inline"><input type="checkbox" id="randomTrain">训练随机</label><button id="addWord">家长增词</button></div><div id="groups" class="row"></div></div>',
-    '<div class="toolbar"><div class="row"><label class="inline">本轮练习 <input id="quantity" type="number" min="1" value="8"> 题</label><span id="selectionM" class="muted"></span><button id="addWord">家长增词</button></div><div id="groups" class="row"></div></div>',
+    '<div class="toolbar"><div class="row"><label class="inline">本轮练习 <input id="quantity" type="number" min="1" value="8"> 题</label><label class="inline">练习形式 <select id="practiceMode"><option value="train">拼读训练</option><option value="flash">闪卡练习</option></select></label><span id="selectionM" class="muted"></span><button id="addWord">家长增词</button></div><div id="groups" class="row"></div></div>',
     1,
 )
 # Bottom bar: single start entry (flash entry removed; random draw covers practice).
@@ -276,6 +281,8 @@ button:hover{border-color:var(--green);transform:translateY(-2px)}button:active{
 button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #d49b34;outline-offset:3px}
 .primary{background:var(--green);border-color:var(--green);color:#fff}.secondary{background:var(--green-soft);border-color:transparent;color:#245344}.ghost{background:transparent}.danger{color:var(--danger)}
 #phonicsApp[hidden],#workbenchShell[hidden]{display:none!important}
+#phonicsApp .word-item.picked{background:#edf5ee;border-color:#76a58c}
+#phonicsApp [data-pick-group].pick-active{background:#2f6e59;border-color:#2f6e59;color:#fff}
 .skip{position:fixed;top:-80px;left:16px;z-index:999;background:var(--ink);color:white;padding:12px}.skip:focus{top:12px}
 .shell{max-width:1360px;margin:auto;display:grid;grid-template-columns:220px minmax(0,1fr);gap:var(--space);padding:24px var(--space) 48px}
 .side{position:sticky;top:24px;height:calc(100dvh - 48px);display:flex;flex-direction:column;background:#eeeade;border:1px solid #dfdbcf;border-radius:28px;padding:20px}

@@ -214,6 +214,26 @@ const HTML = fs.readFileSync(path.join(ROOT, 'family-learning-workbench-v2.html'
   check('phonics-c02-all-40', selectedCount === 40);
   check('phonics-no-manual-picking', await page.evaluate(() => !document.querySelector('#phonicsApp #items input[type="checkbox"]') && !document.getElementById('selectVisible') && !document.getElementById('selectCourse') && !document.getElementById('search') && !document.getElementById('lessonFilter') && !document.getElementById('sort')));
   check('phonics-hash', /ph\/course-detail\/C02/.test(await page.evaluate(() => location.hash)));
+  check('phonics-practice-mode-present', await page.locator('#phonicsApp #practiceMode').count() === 1);
+  check('train-group-buttons', await page.locator('#phonicsApp [data-pick-group]').count() >= 3);
+  await page.locator('#phonicsApp #practiceMode').selectOption('flash');
+  await page.waitForTimeout(200);
+  check('flash-no-group-buttons', await page.locator('#phonicsApp [data-pick-group]').count() === 0);
+  await page.locator('#phonicsApp #trainStart').click();
+  await page.waitForTimeout(300);
+  check('phonics-flash-mode-opens', await page.evaluate(() => document.getElementById('flash').classList.contains('active')));
+  await page.locator('#phonicsApp [data-go="detail"]').click();
+  await page.waitForTimeout(200);
+  await page.locator('#phonicsApp #practiceMode').selectOption('train');
+  await page.waitForTimeout(200);
+  // train mode = ordered learning with group bulk pick
+  await page.locator('#phonicsApp [data-pick-group]').first().click();
+  await page.waitForTimeout(200);
+  const pickedWords = await page.locator('#phonicsApp #items .word-item.picked b').allTextContents();
+  check('train-group-picked-highlight', pickedWords.length > 0);
+  await page.locator('#phonicsApp #trainStart').click();
+  await page.waitForTimeout(300);
+  check('train-ordered-first', (await page.locator('#phonicsApp #trainWord').textContent()).trim() === pickedWords[0].trim());
   // back to workbench nav
   await page.evaluate(() => window.__WB.route('today'));
   check('back-to-wb-hides-phonics', await page.evaluate(() => document.getElementById('phonicsApp').hidden));
